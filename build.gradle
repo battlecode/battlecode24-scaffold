@@ -1,0 +1,344 @@
+//////// General configuration ////////
+
+apply plugin: 'java'
+apply plugin: 'scala'
+
+// Compatibility version: Java 8
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+// Directory layout.
+sourceSets {
+  main {
+    java.srcDirs = ["src"]
+    java.includes = ["**/*.java"]
+    java.destinationDirectory.set(file("$buildDir/classes"))
+
+    scala.srcDirs = ["src"]
+    scala.includes = ["**/*.scala"]
+    scala.destinationDirectory.set(file("$buildDir/classes"))
+  }
+  test {
+    java.srcDirs = ["test"]
+    java.includes = ["**/*.java"]
+    java.destinationDirectory.set(file("$buildDir/tests"))
+
+    scala.srcDirs = ["test"]
+    scala.includes = ["**/*.scala"]
+    scala.destinationDirectory.set(file("$buildDir/tests"))
+  }
+}
+
+
+//////// IDE configuration ////////
+
+apply plugin: 'idea'
+apply plugin: 'eclipse'
+
+idea {
+  module {
+    jdkName = 1.8
+    downloadJavadoc = true
+    downloadSources = true
+  }
+}
+
+eclipse {
+  classpath {
+    downloadJavadoc = true
+    downloadSources = true
+    defaultOutputDir = new File(project.buildDir, 'classes-eclipse')
+  }
+}
+
+
+//////// Versions ////////
+
+ext.versions = [
+  battlecode: new File(projectDir, "version.txt").text.trim()
+]
+
+configurations.all {
+  resolutionStrategy.cacheDynamicVersionsFor 60, 'seconds'
+}
+
+static String getVersionFromWeb(boolean onSaturn) {
+  String[] urls = ["https://api.battlecode.org/api/episode/e/bc23/?format=json"]
+  String version = null
+  for (String url in urls) {
+    try {
+      String episodeInfo = new URL(url).text.trim()
+      if (onSaturn) {
+        version = new groovy.json.JsonSlurper().parseText(episodeInfo).release_version_saturn
+      } else {
+        version = new groovy.json.JsonSlurper().parseText(episodeInfo).release_version_public
+      }
+    } catch (Exception ex) {
+      System.out.println("Could not obtain version from " + url)
+      System.out.println(ex.toString())
+    }
+  }
+  return version
+}
+
+task version {
+  description 'Outputs the currently installed version of Battlecode.'
+  group 'battlecode'
+  doLast {
+    logger.quiet("Currently configured Battlecode version: " + versions.battlecode)
+  }
+}
+
+task checkNewVersion {
+  description 'Checks for a newer version of Battlecode.'
+  group 'battlecode'
+  doLast {
+    def version = getVersionFromWeb((project.findProperty("onSaturn") ?: "false").toBoolean()) ?: versions.battlecode
+    if (versions.battlecode != version) {
+      logger.quiet("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+      logger.quiet("  !!!   NEW BATTLECODE VERSION AVAILABLE   !!!  ")
+      logger.quiet("Current Battlecode version: " + versions.battlecode)
+      logger.quiet("New Battlecode version:     " + version)
+      logger.quiet("Run './gradlew update' to set new configurations")
+      logger.quiet("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    }
+  }
+}
+
+task update {
+  description 'Updates configurations to use the latest available version of Battlecode.'
+  group 'battlecode'
+  doLast {
+    def version = getVersionFromWeb((project.findProperty("onSaturn") ?: "false").toBoolean())
+    if (version == null) {
+      throw new Exception(
+        "Could not find new version number. Are you connected to the internet?"
+      )
+    }
+    if (versions.battlecode != version) {
+      versions.battlecode = version
+      new File(projectDir, "version.txt").text = version
+      logger.quiet("Updated configurations to use version: " + version)
+      logger.warn("Newest dependencies have not yet been downloaded.")
+    }
+  }
+}
+
+
+//////// Dependencies ////////
+
+repositories {
+  // Generic dependencies
+  mavenCentral()
+}
+
+if ((project.findProperty("onSaturn") ?: "false").toBoolean()) {
+  // Saturn: direct access to protected releases.
+  repositories {
+    maven {
+      url "gcs://mitbattlecode-releases/maven"
+      content {
+        includeGroup 'org.battlecode'
+      }
+    }
+  }
+} else {
+  // Public Battlecode distribution.
+  repositories {
+    maven {
+      url "https://releases.battlecode.org/maven"
+      content {
+        includeGroup 'org.battlecode'
+      }
+    }
+  }
+}
+
+
+configurations {
+  client
+  client32
+}
+
+def os = System.getProperty("os.name").toLowerCase()
+def clientName = os.startsWith('windows') ? 'battlecode23-client-win' :
+                 os.startsWith('mac') ? 'battlecode23-client-mac' :
+                 'battlecode23-client-linux'
+
+dependencies {
+  testImplementation group: 'junit', name: 'junit', version: '4.13.2'
+
+  // The Battlecode engine.
+  implementation group: 'org.battlecode', name: 'battlecode23', version: versions.battlecode
+
+  // The Battlecode client.
+  client group: 'org.battlecode', name: clientName, version: versions.battlecode
+
+  // Scala
+  implementation group: 'org.scala-lang', name: 'scala-library', version: '2.11.7'
+  testImplementation group: 'org.scalatest', name: 'scalatest_2.11', version: '3.0.0'
+}
+
+
+//////// Client ////////
+
+def arch64 = System.getProperty("os.arch").matches("^(x86_64|amd64|ia32e|em64t|x64)\$")
+def arch32 = System.getProperty("os.arch").matches("^(x86_32|x86|i[3-6]86|ia32|x32)\$")
+def client32Name = (
+  arch32
+  ? os.startsWith('windows') ? 'battlecode23-client-win-32' :
+    os.startsWith('mac')     ? 'UNSUPPORTED' :
+                               'battlecode23-client-linux-32'
+  : 'UNSUPPORTED'
+)
+
+if (arch32) {
+  if (client32Name.equals('UNSUPPORTED')) {
+    logger.error('Sorry, the Battlecode client does not support 32-bit architectures for OS X.')
+  }
+  dependencies {
+    client32 group: 'org.battlecode', name: client32Name, version: versions.battlecode
+  }
+}
+
+task unpackClient(type: Copy) {
+  description 'Downloads the client.'
+  group 'battlecode'
+
+  dependsOn configurations.client
+  finalizedBy checkNewVersion
+
+  from {
+    configurations.client.collect {
+      zipTree(it)
+    }
+  }
+  into 'client/'
+}
+
+task unpackClient32(type: Copy) {
+  description 'Downloads the 32-bit client.'
+  group 'battlecode'
+
+  dependsOn configurations.client32
+  finalizedBy checkNewVersion
+  onlyIf { arch32 && client32Name != 'UNSUPPORTED' }
+
+  from {
+    configurations.client32.collect {
+      zipTree(it)
+    }
+  }
+  into 'client32/'
+}
+
+
+//////// Building ////////
+
+build.configure {
+  group 'battlecode'
+  dependsOn unpackClient
+  dependsOn unpackClient32
+}
+
+task verify(type: JavaExec) {
+  description 'Runs basic verifications that a package is valid.'
+  group 'battlecode'
+  dependsOn build
+
+  mainClass = 'battlecode.instrumenter.Verifier'
+  classpath = sourceSets.main.runtimeClasspath
+  args = [
+    project.findProperty("team") ?: "examplefuncsplayer",
+    project.findProperty("url") ?: sourceSets.main.output.classesDirs.getAsPath(),
+  ]
+}
+
+
+//////// Running ////////
+
+def defaultClassLocation = sourceSets.main.output.classesDirs.getAsPath()
+def defaultReplay = 'matches/' + project.property('teamA') + '-vs-' + project.property('teamB') + '-on-' + project.property('maps') + '.bc23'
+
+task run(type: JavaExec) {
+  description 'Runs a match without starting the client.'
+  group 'battlecode'
+  dependsOn build
+
+  mainClass = 'battlecode.server.Main'
+  classpath = sourceSets.main.runtimeClasspath
+  args = ['-c=-']
+  jvmArgs = [
+    '-Dbc.server.wait-for-client=' + (project.findProperty('waitForClient') ?: 'false'),
+    '-Dbc.server.mode=headless',
+    '-Dbc.server.map-path=maps',
+    '-Dbc.server.robot-player-to-system-out=' + (project.findProperty('outputVerbose') ?: 'true'),
+    '-Dbc.server.debug=false',
+    '-Dbc.engine.debug-methods=' + (project.findProperty('debug') ?: 'false'),
+    '-Dbc.engine.enable-profiler=' + (project.findProperty('enableProfiler') ?: 'false'),
+    '-Dbc.engine.show-indicators=' + (project.findProperty('showIndicators') ?: 'true'),
+    '-Dbc.game.team-a=' + project.property('teamA'),
+    '-Dbc.game.team-b=' + project.property('teamB'),
+    '-Dbc.game.team-a.url=' + (project.findProperty('classLocationA') ?: defaultClassLocation),
+    '-Dbc.game.team-b.url=' + (project.findProperty('classLocationB') ?: defaultClassLocation),
+    '-Dbc.game.team-a.package=' + (project.findProperty('packageNameA') ?: project.property('teamA')),
+    '-Dbc.game.team-b.package=' + (project.findProperty('packageNameB') ?: project.property('teamB')),
+    '-Dbc.game.maps=' + project.property('maps'),
+    '-Dbc.server.validate-maps=' + project.property('validateMaps'),
+    '-Dbc.server.alternate-order=' + project.property('alternateOrder'),
+    '-Dbc.server.save-file=' + (project.findProperty('replay') ?: defaultReplay),
+  ]
+}
+
+
+//////// Informational ////////
+
+task listPlayers {
+  description 'Lists all available players.'
+  group 'battlecode'
+
+  doLast {
+    sourceSets.main.allSource.each {
+      logger.debug(it.name)
+      if (it.getName().equals('RobotPlayer.java') || it.getName().equals('RobotPlayer.scala')) {
+        URI base = new File(project.projectDir, 'src').toURI()
+        URI full = it.toURI()
+        String path = base.relativize(full).toString()
+        logger.quiet(path.substring(0, path.lastIndexOf('/')).replaceAll('/', '.'))
+      }
+    }
+  }
+}
+
+task listMaps {
+  description 'Lists all available maps.'
+  group 'battlecode'
+
+  doLast {
+    sourceSets.main.compileClasspath.each {
+      logger.debug(it.name)
+      if (it.toString().contains('battlecode23-')) {
+        FileCollection fc = zipTree(it)
+        fc += fileTree(new File(project.projectDir, 'maps'))
+        fc.each {
+          String fn = it.getName()
+          if (fn.endsWith('.map23')) {
+            logger.quiet(fn.substring(0, fn.indexOf('.map23')))
+          }
+        }
+      }
+    }
+  }
+}
+
+
+//////// Submitting ////////
+
+task zipForSubmit(type: Zip) {
+  description 'Produce a zip file for submission.'
+  group 'battlecode'
+
+  archiveFileName = 'submission.zip'
+  destinationDirectory = project.projectDir
+  from sourceSets.main.allSource
+}
