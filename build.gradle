@@ -157,13 +157,17 @@ if ((project.findProperty("onSaturn") ?: "false").toBoolean()) {
 
 configurations {
   client
-  client32
 }
 
 def os = System.getProperty("os.name").toLowerCase()
-def clientName = os.startsWith('windows') ? 'battlecode24-client-win' :
-                 os.startsWith('mac') ? 'battlecode24-client-mac' :
-                 'battlecode24-client-linux'
+def clientName = os.startsWith('windows')
+                    ? 'battlecode24-client-win-'
+                    : os.startsWith('mac')
+                        ? 'battlecode24-client-mac-'
+                        : 'battlecode24-client-linux-'
+def clientType = project.findProperty("compatibilityClient").toBoolean()
+                    ? "electron"
+                    : "tauri"
 
 dependencies {
   testImplementation group: 'junit', name: 'junit', version: '4.13.2'
@@ -172,7 +176,7 @@ dependencies {
   implementation group: 'org.battlecode', name: 'battlecode24', version: versions.battlecode
 
   // The Battlecode client.
-  client group: 'org.battlecode', name: clientName, version: versions.battlecode
+  client group: 'org.battlecode', name: clientName + clientType, version: versions.battlecode
 
   // Scala
   implementation group: 'org.scala-lang', name: 'scala-library', version: '2.11.7'
