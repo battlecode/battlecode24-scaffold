@@ -186,8 +186,8 @@ dependencies {
 
 //////// Client ////////
 
-//def arch64 = System.getProperty("os.arch").matches("^(x86_64|amd64|ia32e|em64t|x64)\$")
-//def arch32 = System.getProperty("os.arch").matches("^(x86_32|x86|i[3-6]86|ia32|x32)\$")
+def arch64 = System.getProperty("os.arch").matches("^(x86_64|amd64|ia32e|em64t|x64)\$")
+def arch32 = System.getProperty("os.arch").matches("^(x86_32|x86|i[3-6]86|ia32|x32)\$")
 
 if (arch32) {
   logger.error('Sorry, the local Battlecode client does not support 32-bit architectures.')
