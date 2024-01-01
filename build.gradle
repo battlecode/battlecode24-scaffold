@@ -7,6 +7,11 @@ apply plugin: 'scala'
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
+// Validate Java version
+if(JavaVersion.current() != JavaVersion.VERSION_1_8) {
+    throw new GradleException("The engine must be run using Java 8")
+}
+
 // Directory layout.
 sourceSets {
   main {
