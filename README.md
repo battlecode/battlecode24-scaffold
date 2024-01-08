@@ -2,6 +2,9 @@
 
 This is the Battlecode 2024 scaffold, containing an `examplefuncsplayer`. Read https://play.battlecode.org/bc24/getting-started!
 
+**We are using a rewritten version of the client this year, so please let teh devs know 
+if you encounter any issues or have any feedback!**
+
 ### Project Structure
 
 - `README.md`
@@ -42,3 +45,12 @@ However, we recommend you make a new bot by copying `examplefuncsplayer` to a ne
     Create a submittable zip file
 - `./gradlew tasks`
     See what else you can do!
+
+
+### Configuration 
+
+Look at `gradle.properties` for project-wide configuration.
+
+If you are having any problems with the default client, please report to teh devs and
+feel free to set the `compatibilityClient` configuration to `true` to download a different
+version of the client.
