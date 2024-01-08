@@ -1,7 +1,6 @@
 package examplefuncsplayer;
 
 import battlecode.common.*;
-import battlecode.schema.GameplayConstants;
 
 import java.util.Arrays;
 import java.util.HashMap;
